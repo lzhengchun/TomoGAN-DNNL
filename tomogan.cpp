@@ -60,17 +60,10 @@ void conv2d(memory::dim batch,
     
     /// Check whether data and weights formats required by convolution is different
     /// from the user format. In case it is different change the layout using reorder primitive.
-    // auto user_src_memory = net_args.back()[DNNL_ARG_DST];
-    // auto conv_src_memory = user_src_memory;
-    // if (conv_prim_desc.src_desc() != user_src_memory.get_desc()) {
-    //     conv_src_memory = memory(conv_prim_desc.src_desc(), eng);
-    //     net.push_back(reorder(user_src_memory, conv_src_memory));
-    //     net_args.push_back({{DNNL_ARG_FROM, user_src_memory},
-    //             {DNNL_ARG_TO, conv_src_memory}});
-    // }
 
     auto conv_weights_memory = user_weights_memory;
     if (conv_prim_desc.weights_desc() != user_weights_memory.get_desc()) {
+        std::cout << "WARNING!!!!!!" << std::endl;
         conv_weights_memory = memory(conv_prim_desc.weights_desc(), eng);
         reorder(user_weights_memory, conv_weights_memory).execute(s, user_weights_memory, conv_weights_memory);
     }
