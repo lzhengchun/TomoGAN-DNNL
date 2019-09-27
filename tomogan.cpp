@@ -48,10 +48,6 @@ void concatenate(memory::dim batch,
     net_args.push_back(args);
 }
 
-void upsampling(){
-    
-}
-
 void maxpooling(memory::dim batch, 
     std::vector<primitive> &net,
     std::vector<std::unordered_map<int, memory>> &net_args,
@@ -134,7 +130,7 @@ void conv2d(memory::dim batch,
                         {DNNL_ARG_WEIGHTS, user_weights_memory},
                         {DNNL_ARG_BIAS, conv_user_bias_memory},
                         {DNNL_ARG_DST,  conv_dst_memory}});
-    // relu1
+    // relu
     if(has_relu){
         /// Create the relu primitive. For better performance, keep the input data
         /// format for ReLU (as well as for other operation primitives until another
