@@ -9,6 +9,8 @@
 #define CL_TARGET_OPENCL_VERSION 220
 #include "dnnl.hpp"
 
+#define DNNL_ARG_WEIGHTS_CUS 5671
+
 static dnnl::engine::kind parse_engine_kind(
         int argc, char **argv, int extra_args = 0) {
     // Returns default engine kind, i.e. CPU, if none given
