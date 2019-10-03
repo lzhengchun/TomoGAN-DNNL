@@ -15,7 +15,7 @@ void concatenate(
     memory::dim tensor1_idx, 
     memory::dim tensor2_idx, 
     memory::dim cat_axis,
-    std::vector<primitive> &net,
+    std::vector< pair<string, primitive> > &net,
     std::vector<std::unordered_map<int, memory>> &net_args,
     engine &eng, 
     stream &s){
@@ -38,7 +38,7 @@ void concatenate(
     auto cat_dst_memory = memory(concat_pd.dst_desc(), eng);
 
     concat c(concat_pd);
-    net.push_back(c);
+    net.push_back(make_pair("concat", c));
 
     std::unordered_map<int, memory> args = {{DNNL_ARG_DST, cat_dst_memory}};
     args.insert({DNNL_ARG_MULTIPLE_SRC + 0, net_args[tensor1_idx][DNNL_ARG_DST]});
@@ -48,7 +48,7 @@ void concatenate(
 }
 
 void maxpooling(
-    std::vector<primitive> &net,
+    std::vector< pair<string, primitive> > &net,
     std::vector<std::unordered_map<int, memory>> &net_args,
     engine &eng, 
     stream &s){
@@ -77,14 +77,15 @@ void maxpooling(
     bool need_reorder_src = pool_pd.src_desc() != user_src_memory.get_desc();
     auto pool_src_memory = need_reorder_src ? memory(pool_pd.src_desc(), eng) : user_src_memory;
     if (need_reorder_src) {
-        net.push_back(reorder(user_src_memory, pool_src_memory));
+        auto reorder_op = reorder(user_src_memory, pool_src_memory);
+        net.push_back(make_pair("reorder_src", reorder_op));
         net_args.push_back({{DNNL_ARG_FROM, user_src_memory},
                             {DNNL_ARG_TO, pool_src_memory}});
     }
 
     auto pool_dst_memory = memory(pool_pd.dst_desc(), eng);
 
-    net.push_back(pooling_forward(pool_pd));
+    net.push_back(make_pair("maxpooling", pooling_forward(pool_pd)));
     net_args.push_back({{DNNL_ARG_SRC, pool_src_memory},
                         {DNNL_ARG_DST, pool_dst_memory}});
 }
@@ -92,7 +93,7 @@ void maxpooling(
 void deconv2d( 
     memory::dim knl_sz,
     memory::dim n_knl,
-    std::vector<primitive> &net,
+    std::vector< pair<string, primitive> > &net,
     std::vector<std::unordered_map<int, memory>> &net_args,
     engine &eng, 
     stream &s,
@@ -130,8 +131,9 @@ void deconv2d(
     bool need_reorder_src = deconv_prim_desc.src_desc() != user_src_memory.get_desc();
     auto deconv_src_memory = need_reorder_src ? memory(deconv_prim_desc.src_desc(), eng) : user_src_memory;
     if (need_reorder_src) {
-        std::cout << "!!!!! src mem needs reorder for deconv" << std::endl;
-        net.push_back(reorder(user_src_memory, deconv_src_memory));
+        // std::cout << "!!!!! src mem needs reorder for deconv" << std::endl;
+        auto reorder_op = reorder(user_src_memory, deconv_src_memory);
+        net.push_back(make_pair("reorder_src", reorder_op));
         net_args.push_back({{DNNL_ARG_FROM, user_src_memory},
                             {DNNL_ARG_TO, deconv_src_memory}});
     }
@@ -139,8 +141,9 @@ void deconv2d(
     bool need_reorder_weights = deconv_prim_desc.weights_desc() != user_weights_memory.get_desc();
     auto deconv_weights_memory  = need_reorder_weights ? memory(deconv_prim_desc.weights_desc(), eng) : user_weights_memory;
     if (need_reorder_weights) {
-        std::cout << "!!!!! weight mem needs reorder for deconv" << std::endl;
-        net.push_back(reorder(user_weights_memory, deconv_weights_memory));
+        // std::cout << "!!!!! weight mem needs reorder for deconv" << std::endl;
+        auto reorder_op = reorder(user_weights_memory, deconv_weights_memory);
+        net.push_back(make_pair("reorder_weights", reorder_op));
         net_args.push_back({{DNNL_ARG_FROM, user_weights_memory},
                             {DNNL_ARG_TO, deconv_weights_memory}});
     }
@@ -149,7 +152,7 @@ void deconv2d(
     auto deconv_dst_memory = memory(deconv_prim_desc.dst_desc(), eng);
     
     /// Create a convolution primitive and add it to the net.
-    net.push_back(deconvolution_forward(deconv_prim_desc));
+    net.push_back(make_pair("deconv", deconvolution_forward(deconv_prim_desc)));
     net_args.push_back({{DNNL_ARG_SRC,     deconv_src_memory},
                         {DNNL_ARG_WEIGHTS, deconv_weights_memory},
                         {DNNL_ARG_WEIGHTS_CUS, user_weights_memory},
@@ -162,7 +165,7 @@ void deconv2d(
                 algorithm::eltwise_relu, net_args.back()[DNNL_ARG_DST].get_desc(), 0.0f);
         auto relu_prim_desc = eltwise_forward::primitive_desc(relu_desc, eng);
 
-        net.push_back(eltwise_forward(relu_prim_desc));
+        net.push_back(make_pair("relu", eltwise_forward(relu_prim_desc)));
         net_args.push_back({{DNNL_ARG_SRC, net_args.back()[DNNL_ARG_DST]},
                             {DNNL_ARG_DST, net_args.back()[DNNL_ARG_DST]}});
     }
@@ -171,7 +174,7 @@ void deconv2d(
 void upsample( 
     memory::dim knl_sz,
     memory::dim n_knl,
-    std::vector<primitive> &net,
+    std::vector< pair<string, primitive> > &net,
     std::vector<std::unordered_map<int, memory>> &net_args,
     engine &eng, 
     stream &s){
@@ -210,7 +213,8 @@ void upsample(
     bool need_reorder_src = deconv_prim_desc.src_desc() != user_src_memory.get_desc();
     auto deconv_src_memory = need_reorder_src ? memory(deconv_prim_desc.src_desc(), eng) : user_src_memory;
     if (need_reorder_src) {
-        net.push_back(reorder(user_src_memory, deconv_src_memory));
+        auto reorder_op = reorder(user_src_memory, deconv_src_memory);
+        net.push_back(make_pair("reorder_src", reorder_op));
         net_args.push_back({{DNNL_ARG_FROM, user_src_memory},
                             {DNNL_ARG_TO, deconv_src_memory}});
     }
@@ -219,7 +223,7 @@ void upsample(
     auto deconv_dst_memory = memory(deconv_prim_desc.dst_desc(), eng);
     
     /// Create a convolution primitive and add it to the net.
-    net.push_back(deconvolution_forward(deconv_prim_desc));
+    net.push_back(make_pair("deconv4ups", deconvolution_forward(deconv_prim_desc)));
     net_args.push_back({{DNNL_ARG_SRC,     deconv_src_memory},
                         {DNNL_ARG_WEIGHTS, user_weights_memory},
                         {DNNL_ARG_DST,     deconv_dst_memory}});
@@ -228,7 +232,7 @@ void upsample(
 void conv2d( 
     memory::dim knl_sz,
     memory::dim n_knl,
-    std::vector<primitive> &net,
+    std::vector< pair<string, primitive> > &net,
     std::vector<std::unordered_map<int, memory>> &net_args,
     engine &eng, 
     stream &s,
@@ -287,8 +291,9 @@ void conv2d(
     bool need_reorder_src = conv_prim_desc.src_desc() != user_src_memory.get_desc();
     auto conv_src_memory = need_reorder_src ? memory(conv_prim_desc.src_desc(), eng) : user_src_memory;
     if (need_reorder_src) {
-        std::cout << "!!!!! src mem needs reorder" << std::endl;
-        net.push_back(reorder(user_src_memory, conv_src_memory));
+        // std::cout << "!!!!! src mem needs reorder" << std::endl;
+        auto reorder_op = reorder(user_src_memory, conv_src_memory);
+        net.push_back(make_pair("reorder_src", reorder_op));
         net_args.push_back({{DNNL_ARG_FROM, user_src_memory},
                             {DNNL_ARG_TO, conv_src_memory}});
     }
@@ -296,8 +301,9 @@ void conv2d(
     bool need_reorder_weights = conv_prim_desc.weights_desc() != user_weights_memory.get_desc();
     auto conv_weights_memory  = need_reorder_weights ? memory(conv_prim_desc.weights_desc(), eng) : user_weights_memory;
     if (need_reorder_weights) {
-        std::cout << "!!!!! weight mem needs reorder" << std::endl;
-        net.push_back(reorder(user_weights_memory, conv_weights_memory));
+        // std::cout << "!!!!! weight mem needs reorder" << std::endl;
+        auto reorder_op = reorder(user_weights_memory, conv_weights_memory);
+        net.push_back(make_pair("reorder_weights", reorder_op));
         net_args.push_back({{DNNL_ARG_FROM, user_weights_memory},
                             {DNNL_ARG_TO, conv_weights_memory}});
     }
@@ -306,7 +312,8 @@ void conv2d(
     auto conv_dst_memory = memory(conv_prim_desc.dst_desc(), eng);
 
     /// Create a convolution primitive and add it to the net.
-    net.push_back(convolution_forward(conv_prim_desc));
+    net.push_back(make_pair("conv2d", convolution_forward(conv_prim_desc)));
+
     net_args.push_back({{DNNL_ARG_SRC,     conv_src_memory},
                         {DNNL_ARG_WEIGHTS, conv_weights_memory},
                         {DNNL_ARG_WEIGHTS_CUS, user_weights_memory},
@@ -327,7 +334,7 @@ void tomogan(engine::kind engine_kind, unsigned int img_sz){
 
     /// Create a vector for the primitives and a vector to hold memory
     /// that will be used as arguments.
-    std::vector<primitive> net;
+    std::vector< pair <string, primitive> > net;
     std::vector<std::unordered_map<int, memory>> net_args;
 
     memory::dims conv_src_tz = {batch, 3, img_sz, img_sz};
@@ -346,8 +353,10 @@ void tomogan(engine::kind engine_kind, unsigned int img_sz){
     }
     inputs_fin.close();
     delete[] input_buf;
-
+    
+    // better to have a placeholder for net
     net_args.push_back({{DNNL_ARG_SRC, user_src_memory}, {DNNL_ARG_DST, user_src_memory}});
+
     vector<int> box_out_idx;
     conv2d(conv_sz[0], n_conv[0], net, net_args, eng, s, true);
     conv2d(conv_sz[1], n_conv[1], net, net_args, eng, s, true);
@@ -390,7 +399,8 @@ void tomogan(engine::kind engine_kind, unsigned int img_sz){
                                  memory::data_type::f32, memory::format_tag::nchw);
     if(net_args.back()[DNNL_ARG_DST].get_desc() != out_md){
         auto dst_mem = memory(out_md, eng);
-        net.push_back(reorder(net_args.back()[DNNL_ARG_DST], dst_mem));
+        auto reorder_op = reorder(net_args.back()[DNNL_ARG_DST], dst_mem);
+        net.push_back(make_pair("reorder_output", reorder_op));
         net_args.push_back({{DNNL_ARG_FROM, net_args.back()[DNNL_ARG_DST]},
                             {DNNL_ARG_TO, dst_mem}});
     }
@@ -418,18 +428,23 @@ void tomogan(engine::kind engine_kind, unsigned int img_sz){
 
     int layer_idx = 0;
     for (auto args : net_args){
+        if(args == net_args.front()){
+            continue;
+        }
         if(args.find(DNNL_ARG_SRC) != args.end()){
             auto in_dims = args[DNNL_ARG_SRC].get_desc().data.dims;
-            printf("Node %d Input: %d x %3d x %d x %d", layer_idx, in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
+            printf("Node %2d for %s; Input: %ld x %3ld x %ld x %ld", layer_idx, \
+                net[layer_idx].first.c_str(), in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
         }else{
             auto in_dims = args[DNNL_ARG_MULTIPLE_SRC + 0].get_desc().data.dims;
-            printf("Node %d Input: %d x %3d x %d x %d, ", layer_idx, in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
+            printf("Node %2d for %s; Input: %ld x %3ld x %ld x %ld, ", layer_idx, \
+                net[layer_idx].first.c_str(), in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
             in_dims = args[DNNL_ARG_MULTIPLE_SRC + 1].get_desc().data.dims;
-            printf("%d x %3d x %d x %d", in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
+            printf("%ld x %3ld x %ld x %ld", in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
         }
 
         auto out_dims = args[DNNL_ARG_DST].get_desc().data.dims;
-        printf(" => Output: %d x %3d x %d x %d\n", out_dims[0], out_dims[1], out_dims[2], out_dims[3]);
+        printf(" => Output: %ld x %3ld x %ld x %ld\n", out_dims[0], out_dims[1], out_dims[2], out_dims[3]);
         layer_idx ++;
     }
 
@@ -451,7 +466,7 @@ void tomogan(engine::kind engine_kind, unsigned int img_sz){
         weights_fin.read((char *) conv_bias.data(), sizeof(float) * in_dims[0]);
 
         if(weights_fin){
-            printf("load weights for conv node %d Weights: %d x %d x %d x %d\n", i, in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
+            // printf("load weights for conv node %d Weights: %d x %d x %d x %d\n", i, in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
             write_to_dnnl_memory(conv_weights.data(), net_args[i][DNNL_ARG_WEIGHTS_CUS]);
             write_to_dnnl_memory(conv_bias.data(),    net_args[i][DNNL_ARG_BIAS]);
             total_weights += (in_dims[0] + wbuf_size);
@@ -466,13 +481,28 @@ void tomogan(engine::kind engine_kind, unsigned int img_sz){
     std::cout << "Model built & loaded successfully, executing now ..." << std::endl;
 
     assert((net.size()+1) == net_args.size() && "something is missing");
-    auto mdl_exe_st = chrono::steady_clock::now();
-    size_t rep_times = 1;
-    for (size_t i = 0; i < rep_times; i++){
-        for (size_t i = 0; i < net.size(); ++i)
-            net.at(i).execute(s, net_args.at(i+1));
+
+    // only need to reorder weights once, but it does not save much
+    for(int i = 0; i < net.size(); i++){
+        if(net[i].first.compare("reorder_weights") == 0){
+            // printf("execute node %d\n", i);
+            net.at(i).second.execute(s, net_args.at(i+1));
+        }
         s.wait();
     }
+
+    auto mdl_exe_st = chrono::steady_clock::now();
+    size_t rep_times = 10;
+    for (size_t r = 0; r < rep_times; r++){
+        for (size_t i = 0; i < net.size(); ++i){
+            if(net[i].first.compare("reorder_weights") != 0){
+                // printf("execute %s\n", net.at(i).first.c_str());
+                net.at(i).second.execute(s, net_args.at(i+1));
+            }
+        }
+        s.wait();
+    }
+    
     auto mdl_exe_ed = chrono::steady_clock::now();
     printf("in averga, it takes %.3f ms to execute the model!\n", \
            chrono::duration_cast<chrono::microseconds>(mdl_exe_ed - mdl_exe_st).count()/1000./rep_times);

@@ -13,7 +13,7 @@ int main(int argc, char** argv)
     auto comp_st = chrono::steady_clock::now();
 
     for (size_t i = 0; i < 1; i++){
-        tomogan(dnnl::engine::kind::gpu, 1024);
+        tomogan(dnnl::engine::kind::cpu, 1024);
     }
     
     auto comp_ed = chrono::steady_clock::now();
