@@ -1,38 +1,58 @@
-#ifndef TOMOGAN_HPP
-#define TOMOGAN_HPP
+/*******************************************************************************
+* Copyright 2019 Intel Corporation
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*******************************************************************************/
+
+#ifndef EXAMPLE_UTILS_HPP
+#define EXAMPLE_UTILS_HPP
 
 #include <algorithm>
+#include <assert.h>
 #include <iostream>
 #include <stdlib.h>
 #include <string>
 
-#define CL_TARGET_OPENCL_VERSION 220
 #include "dnnl.hpp"
 
-#define DNNL_ARG_WEIGHTS_CUS 5671
+dnnl::engine::kind validate_engine_kind(dnnl::engine::kind akind) {
+    // Checking if a GPU exists on the machine
+    if (akind == dnnl::engine::kind::gpu) {
+        if (dnnl::engine::get_count(dnnl::engine::kind::gpu) == 0) {
+            std::cerr << "Application couldn't find GPU, please run with "
+                         "CPU instead. Thanks!\n";
+            exit(0);
+        }
+    }
+    return akind;
+}
 
-static dnnl::engine::kind parse_engine_kind(
+dnnl::engine::kind parse_engine_kind(
         int argc, char **argv, int extra_args = 0) {
     // Returns default engine kind, i.e. CPU, if none given
     if (argc == 1) {
-        return dnnl::engine::kind::cpu;
+        return validate_engine_kind(dnnl::engine::kind::cpu);
     } else if (argc <= extra_args + 2) {
         std::string engine_kind_str = argv[1];
         // Checking the engine type, i.e. CPU or GPU
         if (engine_kind_str == "cpu") {
-            return dnnl::engine::kind::cpu;
+            return validate_engine_kind(dnnl::engine::kind::cpu);
         } else if (engine_kind_str == "gpu") {
-            // Checking if a GPU exists on the machine
-            if (dnnl::engine::get_count(dnnl::engine::kind::gpu) == 0) {
-                std::cerr << "Application couldn't find GPU, please run with "
-                             "CPU instead. Thanks!\n";
-                exit(1);
-            }
-            return dnnl::engine::kind::gpu;
+            return validate_engine_kind(dnnl::engine::kind::gpu);
         }
     }
 
-    // If all above fails, the example should not be ran properly
+    // If all above fails, the example should be ran properly
     std::cerr << "Please run example like this" << argv[0] << " cpu|gpu";
     if (extra_args) { std::cerr << " [extra arguments]"; }
     std::cerr << "\n";

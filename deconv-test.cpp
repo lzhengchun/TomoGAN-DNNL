@@ -21,11 +21,11 @@ void deconv2d(
     engine &eng, 
     stream &s,
     bool has_relu){
-    auto in_dims = net_args.back()[DNNL_ARG_DST].get_desc().data.dims;
-    memory::dim batch    = in_dims[0];
-    memory::dim in_img_c = in_dims[1];
-    memory::dim in_img_h = in_dims[2];
-    memory::dim in_img_w = in_dims[3];
+    // auto in_dims = net_args.back()[DNNL_ARG_DST].get_desc().data.dims;
+    memory::dim batch    = net_args.back()[DNNL_ARG_DST].get_desc().data.dims[0];
+    memory::dim in_img_c = net_args.back()[DNNL_ARG_DST].get_desc().data.dims[1];
+    memory::dim in_img_h = net_args.back()[DNNL_ARG_DST].get_desc().data.dims[2];
+    memory::dim in_img_w = net_args.back()[DNNL_ARG_DST].get_desc().data.dims[3];
 
     memory::dims deconv_src_tz = {batch, in_img_c, in_img_h, in_img_w};
     memory::dims deconv_weights_tz = {n_knl, in_img_c, knl_sz, knl_sz};
@@ -125,15 +125,19 @@ int main(int argc, char const *argv[]){
     }
     inputs_fin.close();
     delete[] input_buf;
+    
     // input tensor
     net_args.push_back({{DNNL_ARG_SRC, user_src_memory},
                         {DNNL_ARG_DST, user_src_memory}});
-
+    
     deconv2d(2, 128, net, net_args, eng, s, true);
     
     // reorder output before copy back to make sure it is NCHW in user space
-    auto out_dims = net_args.back()[DNNL_ARG_DST].get_desc().data.dims;
-    auto out_md   = memory::desc({out_dims[0], out_dims[1], out_dims[2], out_dims[3]}, \
+    // auto out_dims = net_args.back()[DNNL_ARG_DST].get_desc().data.dims;
+    auto out_md   = memory::desc({net_args.back()[DNNL_ARG_DST].get_desc().data.dims[0], \
+        net_args.back()[DNNL_ARG_DST].get_desc().data.dims[1], \
+        net_args.back()[DNNL_ARG_DST].get_desc().data.dims[2], \
+        net_args.back()[DNNL_ARG_DST].get_desc().data.dims[3]}, \
                                  memory::data_type::f32, memory::format_tag::nchw);
     if(net_args.back()[DNNL_ARG_DST].get_desc() != out_md){
         auto dst_mem = memory(out_md, eng);
@@ -144,41 +148,54 @@ int main(int argc, char const *argv[]){
     // print node in/out shape
     for (auto args : net_args){
         if(args.find(DNNL_ARG_SRC) != args.end()){
-            auto in_dims = args[DNNL_ARG_SRC].get_desc().data.dims;
-            printf("Input: %ld x %3ld x %ld x %ld", in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
-        }else{
-            auto in_dims = args[DNNL_ARG_MULTIPLE_SRC + 0].get_desc().data.dims;
-            printf("Input: %ld x %3ld x %ld x %ld, ", in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
-            in_dims = args[DNNL_ARG_MULTIPLE_SRC + 1].get_desc().data.dims;
-            printf("%ld x %3ld x %ld x %ld", in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
-        }
+            // auto in_dims = args[DNNL_ARG_SRC].get_desc().data.dims;
+            auto dim_n = args[DNNL_ARG_SRC].get_desc().data.dims[0];
+            auto dim_c = args[DNNL_ARG_SRC].get_desc().data.dims[1];
+            auto dim_h = args[DNNL_ARG_SRC].get_desc().data.dims[2];
+            auto dim_w = args[DNNL_ARG_SRC].get_desc().data.dims[3];
+            printf("Input: %ld x %3ld x %ld x %ld", dim_n, dim_c, dim_c, dim_c);
+        }//else{
+        //     auto in_dims = args[DNNL_ARG_MULTIPLE_SRC + 0].get_desc().data.dims;
+        //     printf("Input: %ld x %3ld x %ld x %ld, ", dim_n, dim_c, dim_h, dim_w);
+        //     in_dims = args[DNNL_ARG_MULTIPLE_SRC + 1].get_desc().data.dims;
+        //     printf("%ld x %3ld x %ld x %ld", dim_n, dim_c, dim_h, dim_w);
+        // }
 
-        auto out_dims = args[DNNL_ARG_DST].get_desc().data.dims;
-        printf(" => Output: %ld x %3ld x %ld x %ld\n", out_dims[0], out_dims[1], out_dims[2], out_dims[3]);
+        // auto out_dims = args[DNNL_ARG_DST].get_desc().data.dims;
+        auto dim_n = args[DNNL_ARG_DST].get_desc().data.dims[0];
+        auto dim_c = args[DNNL_ARG_DST].get_desc().data.dims[1];
+        auto dim_h = args[DNNL_ARG_DST].get_desc().data.dims[2];
+        auto dim_w = args[DNNL_ARG_DST].get_desc().data.dims[3];
+        printf(" => Output: %ld x %3ld x %ld x %ld\n", dim_n, dim_c, dim_c, dim_c);
     }
 
     // load weights
     int total_weights = 0;
     std::ifstream weights_fin("deconv-oihw.bin", std::ios::binary);
-    auto deconv_node_idx = 2;
+    auto deconv_node_idx = 3;
     if(net_args[deconv_node_idx].find(DNNL_ARG_WEIGHTS_CUS) == net_args[deconv_node_idx].end()){
         printf("node %d is not a deconv operation\n", deconv_node_idx);
         exit(-1);
     }
-    auto in_dims = net_args[deconv_node_idx][DNNL_ARG_WEIGHTS_CUS].get_desc().data.dims;
-    unsigned int wbuf_size = in_dims[0] * in_dims[1] * in_dims[2] * in_dims[3];
+    // auto in_dims = net_args[deconv_node_idx][DNNL_ARG_WEIGHTS_CUS].get_desc().data.dims;
+    auto dim_o = net_args[deconv_node_idx][DNNL_ARG_WEIGHTS_CUS].get_desc().data.dims[0];
+    auto dim_i = net_args[deconv_node_idx][DNNL_ARG_WEIGHTS_CUS].get_desc().data.dims[1];
+    auto dim_h = net_args[deconv_node_idx][DNNL_ARG_WEIGHTS_CUS].get_desc().data.dims[2];
+    auto dim_w = net_args[deconv_node_idx][DNNL_ARG_WEIGHTS_CUS].get_desc().data.dims[3];
+
+    unsigned int wbuf_size = dim_o * dim_i * dim_h * dim_w;
 
     std::vector<float> conv_weights(wbuf_size);
     weights_fin.read((char *) conv_weights.data(), sizeof(float) * wbuf_size);
     
-    std::vector<float> conv_bias(in_dims[0]); // weights layout is oihw
-    weights_fin.read((char *) conv_bias.data(), sizeof(float) * in_dims[0]);
+    std::vector<float> conv_bias(dim_o); // weights layout is oihw
+    weights_fin.read((char *) conv_bias.data(), sizeof(float) * dim_o);
 
     if(weights_fin){
-        printf("load Weights: %ld x %ld x %ld x %ld\n", in_dims[0], in_dims[1], in_dims[2], in_dims[3]);
+        printf("load Weights: %ld x %ld x %ld x %ld\n", dim_o, dim_i, dim_h, dim_w);
         write_to_dnnl_memory(conv_weights.data(), net_args[deconv_node_idx][DNNL_ARG_WEIGHTS_CUS]);
         write_to_dnnl_memory(conv_bias.data(),    net_args[deconv_node_idx][DNNL_ARG_BIAS]);
-        total_weights += (in_dims[0] + wbuf_size);
+        total_weights += (dim_o + wbuf_size);
     }else{
         printf("Error while load weights EoF reached, only %ld bytes could be read\n", weights_fin.gcount());
         exit(-1);
@@ -192,8 +209,14 @@ int main(int argc, char const *argv[]){
     s.wait();
     
     // copy results from dnnl device to cpu mempry
-    auto output_dims = net_args.back()[DNNL_ARG_DST].get_desc().data.dims;
-    auto output_size = output_dims[0] * output_dims[1] * output_dims[2] * output_dims[3];
+    // auto output_dims = net_args.back()[DNNL_ARG_DST].get_desc().data.dims;
+
+    auto out_dim_n = net_args.back()[DNNL_ARG_DST].get_desc().data.dims[0];
+    auto out_dim_c = net_args.back()[DNNL_ARG_DST].get_desc().data.dims[1];
+    auto out_dim_h = net_args.back()[DNNL_ARG_DST].get_desc().data.dims[2];
+    auto out_dim_w = net_args.back()[DNNL_ARG_DST].get_desc().data.dims[3];
+
+    auto output_size = out_dim_n * out_dim_c * out_dim_h * out_dim_w;
     auto output_buf = new float[output_size]();
     read_from_dnnl_memory(output_buf, net_args.back()[DNNL_ARG_DST]);
 
