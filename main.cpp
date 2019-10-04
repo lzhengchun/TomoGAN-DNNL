@@ -10,13 +10,15 @@ using namespace std;
 
 int main(int argc, char** argv)
 {
-    auto comp_st = chrono::steady_clock::now();
-
-    for (size_t i = 0; i < 1; i++){
-        tomogan(dnnl::engine::kind::cpu, 1024);
+    try{
+            auto comp_st = chrono::steady_clock::now();
+            tomogan(parse_engine_kind(argc, argv), 1024);
+            auto comp_ed = chrono::steady_clock::now();
+            printf("It takes %.3f ms to build model, initialize and compute on device!\n", \
+                chrono::duration_cast<chrono::microseconds>(comp_ed - comp_st).count()/1000.);
+    }catch(error &e){
+        std::cerr << "status: " << e.status << std::endl;
+        std::cerr << "message: " << e.message << std::endl;
     }
-    
-    auto comp_ed = chrono::steady_clock::now();
-    printf("It takes %.3f ms to build model, initialize and compute on device!\n", \
-           chrono::duration_cast<chrono::microseconds>(comp_ed - comp_st).count()/1000.);
+    return 0;
 }

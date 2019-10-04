@@ -171,64 +171,6 @@ void deconv2d(
     }
 }
 
-void upsample( 
-    memory::dim knl_sz,
-    memory::dim n_knl,
-    std::vector< pair<string, primitive> > &net,
-    std::vector<std::unordered_map<int, memory>> &net_args,
-    engine &eng, 
-    stream &s){
-    auto in_dims = net_args.back()[DNNL_ARG_DST].get_desc().data.dims;
-    memory::dim batch    = in_dims[0];
-    memory::dim in_img_c = in_dims[1];
-    memory::dim in_img_h = in_dims[2];
-    memory::dim in_img_w = in_dims[3];
-
-    memory::dims deconv_src_tz = {batch, in_img_c, in_img_h, in_img_w};
-    memory::dims deconv_weights_tz = {n_knl, in_img_c, knl_sz, knl_sz};
-    memory::dims deconv_bias_tz = {n_knl};
-    memory::dims deconv_dst_tz  = {batch, n_knl, in_img_h*2, in_img_w*2};
-    memory::dims deconv_strides = {2, 2};
-    memory::dims deconv_padding = {0, 0}; // padding as the same
-
-    /// Create memory that describes data layout in the buffers. here we use tag::oihw for weights.
-    auto user_weights_memory = memory({{deconv_weights_tz},memory::data_type::f32, memory::format_tag::oihw}, eng);
-
-    auto wbuf_size = n_knl * in_img_c * knl_sz * knl_sz;
-    std::vector<float> conv_weights(wbuf_size, 1);
-    write_to_dnnl_memory(conv_weights.data(), user_weights_memory);
-
-    auto deconv_src_md     = memory::desc({deconv_src_tz},     memory::data_type::f32, memory::format_tag::any);
-    auto deconv_weights_md = memory::desc({deconv_weights_tz}, memory::data_type::f32, memory::format_tag::any);
-    auto deconv_dst_md     = memory::desc({deconv_dst_tz},     memory::data_type::f32, memory::format_tag::any);
-
-    auto user_src_memory = net_args.back()[DNNL_ARG_DST];
-    /// Create a convolution descriptor
-    auto deconv_desc = deconvolution_forward::desc(prop_kind::forward_inference,
-            algorithm::deconvolution_direct, deconv_src_md, deconv_weights_md,
-            deconv_dst_md, deconv_strides, deconv_padding, deconv_padding);
-
-    auto deconv_prim_desc = deconvolution_forward::primitive_desc(deconv_desc, eng);
-    
-    bool need_reorder_src = deconv_prim_desc.src_desc() != user_src_memory.get_desc();
-    auto deconv_src_memory = need_reorder_src ? memory(deconv_prim_desc.src_desc(), eng) : user_src_memory;
-    if (need_reorder_src) {
-        auto reorder_op = reorder(user_src_memory, deconv_src_memory);
-        net.push_back(make_pair("reorder_src", reorder_op));
-        net_args.push_back({{DNNL_ARG_FROM, user_src_memory},
-                            {DNNL_ARG_TO, deconv_src_memory}});
-    }
-
-    /// Create a memory primitive for output.
-    auto deconv_dst_memory = memory(deconv_prim_desc.dst_desc(), eng);
-    
-    /// Create a convolution primitive and add it to the net.
-    net.push_back(make_pair("deconv4ups", deconvolution_forward(deconv_prim_desc)));
-    net_args.push_back({{DNNL_ARG_SRC,     deconv_src_memory},
-                        {DNNL_ARG_WEIGHTS, user_weights_memory},
-                        {DNNL_ARG_DST,     deconv_dst_memory}});
-}
-
 void conv2d( 
     memory::dim knl_sz,
     memory::dim n_knl,
@@ -492,7 +434,7 @@ void tomogan(engine::kind engine_kind, unsigned int img_sz){
     }
 
     auto mdl_exe_st = chrono::steady_clock::now();
-    size_t rep_times = 10;
+    size_t rep_times = 20;
     for (size_t r = 0; r < rep_times; r++){
         for (size_t i = 0; i < net.size(); ++i){
             if(net[i].first.compare("reorder_weights") != 0){
